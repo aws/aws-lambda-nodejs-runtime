@@ -3,6 +3,8 @@ name: Build and Push to ECR
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 # Required for requesting the OIDC JWT token
@@ -48,4 +50,5 @@ jobs:
           docker build --build-arg "ARCH=$ARCH" -t "$IMAGE" .
 
       - name: Push image
+        if: github.event_name == 'push'
         run: docker push "$IMAGE"

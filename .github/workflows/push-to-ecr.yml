@@ -12,7 +12,6 @@ permissions:
 
 env:
   ECR_REPOSITORY: aws-lambda-nodejs-runtime
-  CODEBUILD_PROJECT: aws-lambda-nodejs-runtime
 
 jobs:
   build-and-push:
@@ -21,9 +20,9 @@ jobs:
       matrix:
         include:
           - arch: amd64
-            runner-label: codebuild-aws-lambda-nodejs-runtime-${{ github.run_id }}-${{ github.run_attempt }}-ubuntu-7.0-small
+            runner-label: codebuild-project-aws-aws-lambda-nodejs-runtime-x86-${{ github.run_id }}-${{ github.run_attempt }}
           - arch: arm64
-            runner-label: codebuild-aws-lambda-nodejs-runtime-${{ github.run_id }}-${{ github.run_attempt }}-arm-3.0-small
+            runner-label: codebuild-project-aws-aws-lambda-nodejs-runtime-arm64-${{ github.run_id }}-${{ github.run_attempt }}
     runs-on: ${{ matrix.runner-label }}
     steps:
       - name: Checkout

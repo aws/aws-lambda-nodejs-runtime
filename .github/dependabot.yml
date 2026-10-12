@@ -1,13 +1,9 @@
 version: 2
 updates:
-  # Keep the SHA-pinned GitHub Actions in .github/workflows up to date.
-  # Dependabot bumps both the pinned commit SHA and the trailing `# vX.Y.Z`
-  # version comment, so the pins stay current without losing SHA pinning.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
-    # One grouped PR for all action bumps instead of one per action.
     groups:
       github-actions:
         patterns:

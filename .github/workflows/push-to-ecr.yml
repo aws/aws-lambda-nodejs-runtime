@@ -12,11 +12,19 @@ permissions:
 
 env:
   ECR_REPOSITORY: aws-lambda-nodejs-runtime
-  IMAGE_TAG: ${{ github.sha }}
+  CODEBUILD_PROJECT: aws-lambda-nodejs-runtime
 
 jobs:
   build-and-push:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner-label: codebuild-aws-lambda-nodejs-runtime-${{ github.run_id }}-${{ github.run_attempt }}-ubuntu-7.0-small
+          - arch: arm64
+            runner-label: codebuild-aws-lambda-nodejs-runtime-${{ github.run_id }}-${{ github.run_attempt }}-arm-3.0-small
+    runs-on: ${{ matrix.runner-label }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,9 +39,14 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push image
+      - name: Build image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ARCH: ${{ matrix.arch }}
         run: |
-          docker build -t "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" .
-          docker push "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          IMAGE="$ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }}-$ARCH"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          docker build --build-arg "ARCH=$ARCH" -t "$IMAGE" .
+
+      - name: Push image
+        run: docker push "$IMAGE"

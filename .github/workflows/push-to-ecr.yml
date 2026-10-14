@@ -26,29 +26,34 @@ jobs:
           - arch: arm64
             runner-label: codebuild-project-aws-aws-lambda-nodejs-runtime-arm64-${{ github.run_id }}-${{ github.run_attempt }}
     runs-on: ${{ matrix.runner-label }}
+    environment: ${{ github.event_name == 'push' && 'deploy' || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Build image
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: docker build --build-arg "ARCH=$ARCH" -t "$ECR_REPOSITORY:$ARCH" .
+
       - name: Configure AWS credentials (OIDC)
+        if: github.event_name == 'push'
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Login to Amazon ECR
+        if: github.event_name == 'push'
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
 
-      - name: Build image
+      - name: Push image
+        if: github.event_name == 'push'
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ARCH: ${{ matrix.arch }}
         run: |
           IMAGE="$ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }}-$ARCH"
-          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
-          docker build --build-arg "ARCH=$ARCH" -t "$IMAGE" .
-
-      - name: Push image
-        if: github.event_name == 'push'
-        run: docker push "$IMAGE"
+          docker tag "$ECR_REPOSITORY:$ARCH" "$IMAGE"
+          docker push "$IMAGE"

@@ -29,7 +29,7 @@ runtimes/nodejs24.x/
   durable/                 the Durable Functions SDK, locked
 test/                      smoke tests through the public Runtime Interface Emulator
 .github/workflows/
-  build-image.yml          builds and smoke-tests the arm64 image on a CodeBuild-hosted runner
+  build-image.yml          builds, smoke-tests and pushes the arm64 image on a CodeBuild-hosted runner
 ```
 
 ## Building
@@ -66,9 +66,11 @@ and an ES module import from a layer) through the public Runtime Interface Emula
 ## Building on a CodeBuild-hosted runner
 
 `.github/workflows/build-image.yml` runs the build and the smoke tests on the arm64 CodeBuild
-runner project `project-aws-aws-lambda-nodejs-runtime-arm64`, for pull requests to `main` and
-on manual dispatch. Its runner labels request the `2xlarge` instance size. These parts of it
-depend on the runner:
+runner project `project-aws-aws-lambda-nodejs-runtime-arm64`, for pull requests to `main`, pushes
+to `main` and on manual dispatch. A push also pushes the image to the ECR repository
+`aws-lambda-nodejs-runtime`, tagged `<commit>-arm64`, using the role in the `AWS_ROLE_ARN`
+secret, which the `deploy` environment's OIDC token may assume. Its runner labels request the
+`2xlarge` instance size. These parts of it depend on the runner:
 
 - **Image store.** The build needs Docker's containerd image store, which CodeBuild's Docker
   daemon does not use by default. The workflow restarts `dockerd` with the store enabled, which

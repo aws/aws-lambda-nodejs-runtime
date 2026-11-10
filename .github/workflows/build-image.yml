@@ -1,5 +1,6 @@
 # Builds the nodejs24.x mainline runtime image for arm64 on a CodeBuild-hosted runner and runs the
-# smoke tests through the Runtime Interface Emulator.
+# smoke tests through the Runtime Interface Emulator. On a push it also pushes the image to ECR,
+# tagged <commit>-arm64, as the role that the deploy environment's OIDC token may assume.
 #
 # The CodeBuild label names the runner project; the extra labels override its instance size.
 # Repository variables:
@@ -8,16 +9,22 @@
 name: Build runtime image
 
 on:
+  push:
+    branches: [main, svozza/runtime-image]
   pull_request:
     branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'push' }}
+
+env:
+  ECR_REPOSITORY: aws-lambda-nodejs-runtime
 
 jobs:
   build-arm64:
@@ -25,6 +32,7 @@ jobs:
       - codebuild-project-aws-aws-lambda-nodejs-runtime-arm64-${{ github.run_id }}-${{ github.run_attempt }}
       - instance-size:2xlarge
     timeout-minutes: 120
+    environment: ${{ github.event_name == 'push' && 'deploy' || '' }}
     env:
       BUILDKIT_PROGRESS: plain
     steps:
@@ -61,3 +69,24 @@ jobs:
 
       - name: Smoke-test the image
         run: node test/run.mjs lambda-runtime/image:nodejs24.x-mainline-arm64 linux/arm64
+
+      - name: Configure AWS credentials (OIDC)
+        if: github.event_name == 'push'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        if: github.event_name == 'push'
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      - name: Push the image
+        if: github.event_name == 'push'
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          image="$ECR_REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA-arm64"
+          docker tag lambda-runtime/image:nodejs24.x-mainline-arm64 "$image"
+          docker push "$image"

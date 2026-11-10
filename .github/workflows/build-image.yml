@@ -1,0 +1,63 @@
+# Builds the nodejs24.x mainline runtime image for arm64 on a CodeBuild-hosted runner and runs the
+# smoke tests through the Runtime Interface Emulator.
+#
+# The CodeBuild label names the runner project; the extra labels override its instance size.
+# Repository variables:
+#   REGISTRY_MIRROR  optional: an ECR pull-through cache of public.ecr.aws for the builder and
+#                    base images (see build.sh). The runner's CodeBuild role pulls from it.
+name: Build runtime image
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-arm64:
+    runs-on:
+      - codebuild-project-aws-aws-lambda-nodejs-runtime-arm64-${{ github.run_id }}-${{ github.run_attempt }}
+      - instance-size:2xlarge
+    timeout-minutes: 120
+    env:
+      BUILDKIT_PROGRESS: plain
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # build.sh writes to the containerd image store and later builds read those images back
+      # as build contexts, which the classic image store cannot do.
+      - name: Use the containerd image store
+        run: |
+          if docker info -f '{{ .DriverStatus }}' | grep -q io.containerd.snapshotter; then exit 0; fi
+          mkdir -p /etc/docker
+          echo '{"features":{"containerd-snapshotter":true}}' > /etc/docker/daemon.json
+          pkill dockerd || true
+          while pgrep -x dockerd > /dev/null; do sleep 1; done
+          nohup dockerd > /tmp/dockerd.log 2>&1 &
+          for attempt in $(seq 60); do docker info > /dev/null 2>&1 && break; sleep 1; done
+          docker info -f '{{ .DriverStatus }}' | grep io.containerd.snapshotter
+          docker version
+          docker buildx version
+
+      - name: Log in to the registry mirror
+        if: vars.REGISTRY_MIRROR != ''
+        env:
+          REGISTRY_MIRROR: ${{ vars.REGISTRY_MIRROR }}
+        run: aws ecr get-login-password | docker login --username AWS --password-stdin "${REGISTRY_MIRROR%%/*}"
+
+      - name: Build the image
+        env:
+          REGISTRY_MIRROR: ${{ vars.REGISTRY_MIRROR }}
+        run: ./build.sh 24 linux/arm64
+
+      - name: Smoke-test the image
+        run: node test/run.mjs lambda-runtime/image:nodejs24.x-mainline-arm64 linux/arm64

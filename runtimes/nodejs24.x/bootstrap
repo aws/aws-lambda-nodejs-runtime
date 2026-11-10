@@ -1,0 +1,138 @@
+#!/bin/sh
+# Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+if [ -z "$NODE_PATH" ];
+then
+  nodejs_mods="/opt/nodejs/node_modules"
+  nodejs24_mods="/opt/nodejs/node24/node_modules"
+  runtime_mods="/var/runtime/node_modules"
+  task="/var/runtime:/var/task"
+  export NODE_PATH="$nodejs24_mods:$nodejs_mods:$runtime_mods:$task"
+fi
+
+# Disable PQC keyshares in TLS ClientHello by default to avoid middlebox
+# compatibility issues. Customers can opt-in to PQC by setting OPENSSL_CONF=/dev/null.
+if [ -z "${OPENSSL_CONF+set}" ]; then
+  export OPENSSL_CONF=/var/runtime/openssl_conf/openssl.cnf
+fi
+
+if [ -n "$AWS_LAMBDA_FUNCTION_MEMORY_SIZE" ];
+then
+  # For V8 options, both '_' and '-' are supported
+  # Ref: https://github.com/nodejs/node/pull/14093
+  semi_space_str_und="--max_semi_space_size"
+  old_space_str_und="--max_old_space_size"
+
+  semi_space_str=${semi_space_str_und//[_]/-}
+  old_space_str=${old_space_str_und//[_]/-}
+
+  # Do not override customers' semi and old space size options if they specify them
+  # with NODE_OPTIONS env var. If they just set one, use the default value from v8
+  # for the other.
+  case $NODE_OPTIONS in
+  *$semi_space_str_und*);;
+  *$old_space_str_und*);;
+  *$semi_space_str*);;
+  *$old_space_str*);;
+  *)
+    # New space should be 5% of AWS_LAMBDA_FUNCTION_MEMORY_SIZE, leaving 5% available for buffers, for instance,
+    # very large images or JSON files, which are allocated as C memory, rather than JavaScript heap in V8.
+    new_space=$(($AWS_LAMBDA_FUNCTION_MEMORY_SIZE / 10))
+    # The young generation size of the V8 heap is three times the size of the semi-space,
+    # an increase of 1 MiB to semi-space applies to each of the three individual semi-spaces
+    # and causes the heap size to increase by 3 MiB.
+    semi_space=$(($new_space / 6))
+    # Old space should be 90% of AWS_LAMBDA_FUNCTION_MEMORY_SIZE
+    old_space=$(($AWS_LAMBDA_FUNCTION_MEMORY_SIZE - $new_space))
+    MEMORY_ARGS=(
+      "$semi_space_str=$semi_space"
+      "$old_space_str=$old_space"
+    )
+    ;;
+  esac
+fi
+
+# If NODE_EXTRA_CA_CERTS is being set by the customer, don't override. Else, include RDS CA
+if [ -z "${NODE_EXTRA_CA_CERTS+set}" ]; then
+  # Use the default CA bundle in regions that have 3 dashes in their name
+  if [ "${AWS_REGION:0:6}" != "us-gov" ] && [ "${AWS_REGION//[^-]}" == "---" ]; then
+    export NODE_EXTRA_CA_CERTS=/etc/pki/tls/certs/ca-bundle.crt
+  fi
+fi
+
+export AWS_EXECUTION_ENV=AWS_Lambda_nodejs24.x
+
+# Set UV_THREADPOOL_SIZE to 16 per worker in multi-concurrency environments if not already set
+if [ -n "$AWS_LAMBDA_MAX_CONCURRENCY" ] && [ -z "$UV_THREADPOOL_SIZE" ]; then
+  # Detect vCPUs from cgroup v2 CPU quota
+  # https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html#cpu
+  # cpu.max contains: "<max> <period>" where max is the quota in microseconds
+  cpus=1
+  if [ -f /sys/fs/cgroup/cpu.max ]; then
+    read -r max period < /sys/fs/cgroup/cpu.max
+    if [ "$max" != "max" ] && [ "$period" -gt 0 ] 2>/dev/null && [ "$max" -gt 0 ] 2>/dev/null; then
+      cpus=$(( (max + period - 1) / period ))
+    else
+      cpus=$(nproc 2>/dev/null || echo 1)
+    fi
+  fi
+  # The runtime starts one worker per vCPU unless the customer sets a positive integer AWS_LAMBDA_NODEJS_WORKER_COUNT
+  workers=$cpus
+  if [ "$AWS_LAMBDA_NODEJS_WORKER_COUNT" -gt 0 ] 2>/dev/null; then
+    workers=$AWS_LAMBDA_NODEJS_WORKER_COUNT
+  fi
+  export UV_THREADPOOL_SIZE=$(( 16 * workers ))
+fi
+
+# Handle experimental Node.js flags based on customer NODE_OPTIONS
+# NODEJS@22 introduced a feature to detect syntax in ambiguous files that end with .js
+# The feature is enabled by default on node, we disable it as it is not compatible with
+# our RIC due to the differences in import logic. We will be updating the RIC and enabling
+# the feature down the road.
+# https://nodejs.org/en/blog/release/v22.12.0
+# Node 22.12.0 introduced support for require(esm) by default
+# Disabling it to as it is not compatible with the RIC and to keep the experience backwards compatible
+EXPERIMENTAL_ARGS=()
+
+# Check if customer has enabled --experimental-detect-module in NODE_OPTIONS
+case $NODE_OPTIONS in
+*--experimental-detect-module*)
+  EXPERIMENTAL_ARGS+=(--experimental-detect-module)
+  ;;
+*)
+  EXPERIMENTAL_ARGS+=(--no-experimental-detect-module)
+  ;;
+esac
+
+# Check if customer has enabled --experimental-require-module in NODE_OPTIONS
+case $NODE_OPTIONS in
+*--experimental-require-module*)
+  EXPERIMENTAL_ARGS+=(--experimental-require-module)
+  ;;
+*)
+  EXPERIMENTAL_ARGS+=(--no-experimental-require-module)
+  ;;
+esac
+
+NODE_ARGS=(
+    --expose-gc
+    --max-http-header-size 81920
+    "${EXPERIMENTAL_ARGS[@]}"
+    "${MEMORY_ARGS[@]}"
+    /var/runtime/index.mjs
+    )
+
+if [ -z "$AWS_LAMBDA_EXEC_WRAPPER" ]; then
+  exec /var/lang/bin/node "${NODE_ARGS[@]}"
+else
+  wrapper="$AWS_LAMBDA_EXEC_WRAPPER"
+  if [ ! -f "$wrapper" ]; then
+    echo "$wrapper: does not exist"
+    exit 127
+  fi
+  if [ ! -x "$wrapper" ]; then
+    echo "$wrapper: is not an executable"
+    exit 126
+  fi
+    exec -- "$wrapper" /var/lang/bin/node "${NODE_ARGS[@]}"
+fi

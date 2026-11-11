@@ -1,7 +1,7 @@
 # Builds the Lambda Node.js runtime image for one Node major, in four parts:
 #   base       the managed-runtime base OS, independent of the runtime language
 #   lang       /var/lang: GCC, OpenSSL, and Node from pinned upstream sources
-#   runtime    /var/runtime and /lambda-entrypoint.sh: bootstrap, config files, SDK, RIC
+#   runtime    /var/runtime and /lambda-entrypoint.sh: bootstrap, TLS profiles, SDK, RIC
 #   image      the runtime image: base, then the managed image's layers in its order
 # Build with build.sh, which passes the pinned inputs from base/base.env, builder-images.env,
 # runtimes/<major>/lang.env, and runtimes/<major>/versions.env.
@@ -54,15 +54,17 @@ RUN microdnf -y swap openssl-libs openssl-snapsafe-libs \
 # /var/lang: Node, OpenSSL, and libstdc++ from upstream sources.
 # ---------------------------------------------------------------------------------------------
 
+# Node's configure needs Python 3.10 or later and looks for python3.12 by name; AL2023's python3
+# is 3.9.
 FROM ${BUILDER_BASE} AS builder-base
 RUN dnf install -y -q \
-        tar gzip xz bzip2 make binutils gcc gcc-c++ libstdc++-static python3 procps-ng \
+        tar gzip xz bzip2 make binutils gcc gcc-c++ libstdc++-static python3 python3.12 procps-ng \
         patch diffutils flex hardlink findutils perl perl-IPC-Cmd perl-FindBin \
         perl-File-Compare perl-File-Copy perl-Time-Piece \
     && dnf clean all -q \
     && rm -rf /var/cache/dnf
 
-# GCC is built from source because AL2023's default GCC 11 is older than Node 24 supports,
+# GCC is built from source because AL2023's default GCC 11 is older than Node 26 supports,
 # and the current runtime ships GCC 13.2.0's libstdc++. The recipe is the managed runtime's,
 # built in place on the AL2023 release current when the managed runtime built its GCC
 # (GCC_BUILDER_BASE), with the same packages and configure options. The source is the signed GNU
@@ -218,12 +220,14 @@ FROM ${BUILDER_BASE} AS assemble
 ARG MAJOR_VERSION
 ARG NODE_VERSION
 ARG SOURCE_DATE_EPOCH
-COPY runtimes/nodejs${MAJOR_VERSION}.x/bootstrap runtimes/nodejs${MAJOR_VERSION}.x/openssl.cnf \
+COPY runtimes/nodejs${MAJOR_VERSION}.x/bootstrap runtimes/nodejs${MAJOR_VERSION}.x/resolve-tls-profile.sh \
     runtimes/nodejs${MAJOR_VERSION}.x/ca-cert.pem runtimes/nodejs${MAJOR_VERSION}.x/THIRD-PARTY-LICENSES.txt \
     /src/runtime/
+COPY runtimes/nodejs${MAJOR_VERSION}.x/tls-profiles /src/runtime/tls-profiles
 COPY --from=base-src lambda-entrypoint.sh /src/lambda-entrypoint.sh
 RUN install -D -m 0755 /src/runtime/bootstrap /out/var/runtime/bootstrap \
-    && install -D -m 0644 /src/runtime/openssl.cnf /out/var/runtime/openssl_conf/openssl.cnf \
+    && install -D -m 0755 /src/runtime/resolve-tls-profile.sh /out/var/runtime/resolve-tls-profile.sh \
+    && install -D -m 0644 -t /out/var/runtime/tls-profiles /src/runtime/tls-profiles/* \
     && install -D -m 0644 /src/runtime/ca-cert.pem /out/var/runtime/ca-cert.pem \
     && install -D -m 0644 /src/runtime/THIRD-PARTY-LICENSES.txt /out/var/runtime/THIRD-PARTY-LICENSES.txt \
     && install -D -m 0755 /src/lambda-entrypoint.sh /out/lambda-entrypoint.sh \

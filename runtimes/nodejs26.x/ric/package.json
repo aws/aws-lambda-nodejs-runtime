@@ -1,7 +1,7 @@
 {
   "name": "lambda-runtime-ric",
   "private": true,
-  "description": "Runtime Interface Client for the nodejs24.x runtime",
+  "description": "Runtime Interface Client for the nodejs26.x runtime",
   "dependencies": {
     "aws-lambda-ric": "4.0.2"
   }

@@ -1,10 +1,10 @@
 # Lambda Node.js runtime image: open build (proof of concept)
 
-This repository builds the Lambda `nodejs24.x` runtime image from public sources with Docker
+This repository builds the Lambda `nodejs26.x` runtime image from public sources with Docker
 alone: no internal build tools, no checked-in binaries. It shows what the build could look like once it moves
 to GitHub. It has been tested on arm64 only.
 
-The result matches the managed `nodejs24.x` image closely; see
+The result matches the managed `nodejs26.x` image closely; see
 [How it compares](#how-it-compares-to-the-managed-image).
 
 ## What is in here
@@ -13,18 +13,18 @@ The result matches the managed `nodejs24.x` image closely; see
 Dockerfile                 the whole build, in four sections:
                              base     Amazon Linux 2023 minimal plus the two packages the managed base adds
                              lang     /var/lang: GCC 13, OpenSSL, and Node, compiled from source
-                             runtime  /var/runtime: bootstrap, config files, SDK, RIC
+                             runtime  /var/runtime: bootstrap, TLS profiles, SDK, RIC
                              image    the final image, in the managed image's layer order
 build.sh                   runs the build
 builder-images.env         images used only to build, pinned by digest
 base/                      inputs shared by every runtime: base image, entrypoint
-runtimes/nodejs24.x/
+runtimes/nodejs26.x/
   lang.env                 Node, OpenSSL, and GCC versions, each pinned by SHA-256
   versions.env             the Node major
   sdk/                     the managed image's SDK packages, locked; update.sh regenerates them
   patches/                 the two Lambda patches applied to Node
   locks/                   expected root certificates and globals, checked during the build
-  bootstrap, openssl.cnf, ca-cert.pem, THIRD-PARTY-LICENSES.txt
+  bootstrap, resolve-tls-profile.sh, tls-profiles/, ca-cert.pem, THIRD-PARTY-LICENSES.txt
   ric/                     the Runtime Interface Client and its addon's build tools, locked
   durable/                 the Durable Functions SDK, locked
 test/                      smoke tests through the public Runtime Interface Emulator
@@ -38,16 +38,16 @@ You need Docker with `buildx`, using the containerd image store. Reproducible bu
 Docker 29 or later; see below.
 
 ```sh
-./build.sh 24 linux/arm64                    # mainline runtime image
-./build.sh 24 linux/arm64 DurableFunction    # DurableFunction variant
+./build.sh 26 linux/arm64                    # mainline runtime image
+./build.sh 26 linux/arm64 DurableFunction    # DurableFunction variant
 ```
 
 The first build compiles GCC, OpenSSL, and Node and takes 1.5–2 hours on 4 cores; after that
 `/var/lang` comes from the cache. To reuse a built `/var/lang` without the cache, for example after
-`docker builder prune`, push `lambda-runtime/lang:nodejs24.x-arm64` to a registry you control and
+`docker builder prune`, push `lambda-runtime/lang:nodejs26.x-arm64` to a registry you control and
 set `LANG_IMAGE` to it by digest: BuildKit looks an image name up on its registry before the local
 image store, and an unqualified name on Docker Hub. The image is tagged
-`lambda-runtime/image:nodejs24.x-<variant>-arm64`. `build.sh` lists the other targets.
+`lambda-runtime/image:nodejs26.x-<variant>-arm64`. `build.sh` lists the other targets.
 
 Builds are reproducible on Docker 29 or later: the same commit gives a byte-identical image
 (apart from the base's package database, see below). File timestamps come from the latest
@@ -57,7 +57,7 @@ commit. Docker 28 cannot rewrite layer timestamps in the containerd image store,
 ## Testing
 
 ```sh
-node test/run.mjs lambda-runtime/image:nodejs24.x-mainline-arm64 linux/arm64
+node test/run.mjs lambda-runtime/image:nodejs26.x-mainline-arm64 linux/arm64
 ```
 
 This runs five handlers (CommonJS, ES module, the bundled SDK through `require` and `import`,
@@ -100,7 +100,10 @@ variables through with `--env` so that the workflow can log in to the mirror.
 
 ## How it compares to the managed image
 
-Compared with the managed `nodejs24.x` arm64 image of October 2026:
+The figures in this section and in [The SDK](#the-sdk) were measured on this build of
+`nodejs24.x` against the managed `nodejs24.x` arm64 image of October 2026. They have not been
+measured again for `nodejs26.x`, which is built from the same recipe with the inputs of the
+managed `nodejs26.x` image: Node 26.13.0, its bootstrap, TLS profiles and SDK package versions.
 
 | | Result |
 |---|---|
@@ -115,7 +118,7 @@ Compared with the managed `nodejs24.x` arm64 image of October 2026:
 
 ## The SDK
 
-`runtimes/nodejs24.x/sdk/package.json` lists the 553 `@aws-sdk` packages the managed image
+`runtimes/nodejs26.x/sdk/package.json` lists the 553 `@aws-sdk` packages the managed image
 ships, at its versions (SDK 3.1105.0), and `package-lock.json` is npm's resolution of them. The
 build installs them with `npm ci --ignore-scripts`, then `layout.mjs` moves the listed packages
 to `/var/runtime/node_modules/@aws-sdk` and the rest of npm's tree to `@aws-sdk/node_modules`,

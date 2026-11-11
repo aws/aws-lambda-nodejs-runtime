@@ -4,16 +4,10 @@
 if [ -z "$NODE_PATH" ];
 then
   nodejs_mods="/opt/nodejs/node_modules"
-  nodejs24_mods="/opt/nodejs/node24/node_modules"
+  nodejs26_mods="/opt/nodejs/node26/node_modules"
   runtime_mods="/var/runtime/node_modules"
   task="/var/runtime:/var/task"
-  export NODE_PATH="$nodejs24_mods:$nodejs_mods:$runtime_mods:$task"
-fi
-
-# Disable PQC keyshares in TLS ClientHello by default to avoid middlebox
-# compatibility issues. Customers can opt-in to PQC by setting OPENSSL_CONF=/dev/null.
-if [ -z "${OPENSSL_CONF+set}" ]; then
-  export OPENSSL_CONF=/var/runtime/openssl_conf/openssl.cnf
+  export NODE_PATH="$nodejs26_mods:$nodejs_mods:$runtime_mods:$task"
 fi
 
 if [ -n "$AWS_LAMBDA_FUNCTION_MEMORY_SIZE" ];
@@ -60,7 +54,10 @@ if [ -z "${NODE_EXTRA_CA_CERTS+set}" ]; then
   fi
 fi
 
-export AWS_EXECUTION_ENV=AWS_Lambda_nodejs24.x
+export AWS_EXECUTION_ENV=AWS_Lambda_nodejs26.x
+
+# Resolve the TLS profile from AWS_LAMBDA_TLS_PROFILE. Hard fails on an unknown profile.
+source /var/runtime/resolve-tls-profile.sh
 
 # Set UV_THREADPOOL_SIZE to 16 per worker in multi-concurrency environments if not already set
 if [ -n "$AWS_LAMBDA_MAX_CONCURRENCY" ] && [ -z "$UV_THREADPOOL_SIZE" ]; then
@@ -111,6 +108,18 @@ case $NODE_OPTIONS in
   ;;
 *)
   EXPERIMENTAL_ARGS+=(--no-experimental-require-module)
+  ;;
+esac
+
+# Node 26 ships the experimental node:ffi module (on by default as of 26.9.0).
+# Disable it by default to keep the runtime surface minimal; customers can opt
+# back in by adding --experimental-ffi to NODE_OPTIONS.
+case $NODE_OPTIONS in
+*--experimental-ffi*)
+  EXPERIMENTAL_ARGS+=(--experimental-ffi)
+  ;;
+*)
+  EXPERIMENTAL_ARGS+=(--no-experimental-ffi)
   ;;
 esac
 

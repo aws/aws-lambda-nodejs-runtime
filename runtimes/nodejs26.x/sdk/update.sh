@@ -3,9 +3,9 @@
 # packages it ships, at its versions, and npm's resolution of their dependencies, made with the
 # image's own npm. Needs Docker, and network access to the image's registry and npm.
 #
-#   update.sh [IMAGE]    IMAGE defaults to public.ecr.aws/lambda/nodejs:24
+#   update.sh [IMAGE]    IMAGE defaults to public.ecr.aws/lambda/nodejs:26
 set -eu
-image=${1:-public.ecr.aws/lambda/nodejs:24}
+image=${1:-public.ecr.aws/lambda/nodejs:26}
 dir=$(cd "$(dirname "$0")" && pwd)
 
 docker pull -q --platform linux/arm64 "$image" > /dev/null

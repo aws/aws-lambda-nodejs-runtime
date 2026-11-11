@@ -1,11 +1,11 @@
 #!/bin/sh
 # Usage: build.sh MAJOR PLATFORM [VARIANT] [TARGET]
-#   build.sh 24 linux/arm64                          lang, mainline runtime, and mainline image
-#   build.sh 24 linux/arm64 DurableFunction          the same for the DurableFunction variant
-#   build.sh 24 linux/arm64 mainline runtime         lang and the runtime only
-#   build.sh 24 linux/arm64 mainline lang            lang only
-#   build.sh 24 linux/arm64 mainline base            the base OS image only
-#   build.sh 24 linux/arm64 mainline node            any other stage of Dockerfile, for example
+#   build.sh 26 linux/arm64                          lang, mainline runtime, and mainline image
+#   build.sh 26 linux/arm64 DurableFunction          the same for the DurableFunction variant
+#   build.sh 26 linux/arm64 mainline runtime         lang and the runtime only
+#   build.sh 26 linux/arm64 mainline lang            lang only
+#   build.sh 26 linux/arm64 mainline base            the base OS image only
+#   build.sh 26 linux/arm64 mainline node            any other stage of Dockerfile, for example
 #                                                    node, which keeps the Node source tree
 # VARIANT is "mainline" (the default) or "DurableFunction", the variant names Lambda uses.
 # TARGET is image (the default), runtime, lang, base, or a stage name.

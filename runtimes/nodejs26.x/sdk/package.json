@@ -1,7 +1,7 @@
 {
   "name": "lambda-runtime-sdk",
   "private": true,
-  "description": "The @aws-sdk packages public.ecr.aws/lambda/nodejs@sha256:66c547b04b1ec3b0b832816df70d4911d0721b4d29717dd0bd5358876586092e ships, at its versions",
+  "description": "The @aws-sdk packages public.ecr.aws/lambda/nodejs@sha256:879b70a1754dbfab8eeb731db84614c7f97fc47fac6e4dcbe2be3dfd930e9546 ships, at its versions",
   "dependencies": {
     "@aws-sdk/abort-controller": "3.374.0",
     "@aws-sdk/body-checksum-node": "3.972.27",

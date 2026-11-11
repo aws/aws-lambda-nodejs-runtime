@@ -54,15 +54,17 @@ RUN microdnf -y swap openssl-libs openssl-snapsafe-libs \
 # /var/lang: Node, OpenSSL, and libstdc++ from upstream sources.
 # ---------------------------------------------------------------------------------------------
 
-# Node's configure needs Python 3.10 or later and looks for python3.12 by name; AL2023's python3
-# is 3.9.
+# Node's configure needs a newer Python than AL2023's python3, and its Temporal support is built
+# with Rust from the crates vendored in the Node tarball. python3 is pointed at python3.14 last,
+# because dnf runs on the system Python.
 FROM ${BUILDER_BASE} AS builder-base
 RUN dnf install -y -q \
-        tar gzip xz bzip2 make binutils gcc gcc-c++ libstdc++-static python3 python3.12 procps-ng \
+        tar gzip xz bzip2 make binutils gcc gcc-c++ libstdc++-static python3.14 rust cargo procps-ng \
         patch diffutils flex hardlink findutils perl perl-IPC-Cmd perl-FindBin \
         perl-File-Compare perl-File-Copy perl-Time-Piece \
     && dnf clean all -q \
-    && rm -rf /var/cache/dnf
+    && rm -rf /var/cache/dnf \
+    && ln -sf /usr/bin/python3.14 /usr/bin/python3
 
 # GCC is built from source because AL2023's default GCC 11 is older than Node 26 supports,
 # and the current runtime ships GCC 13.2.0's libstdc++. The recipe is the managed runtime's,

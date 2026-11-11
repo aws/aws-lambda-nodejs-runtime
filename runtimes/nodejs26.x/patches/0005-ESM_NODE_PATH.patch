@@ -2,7 +2,7 @@ diff --git a/lib/internal/modules/esm/resolve.js b/lib/internal/modules/esm/reso
 --- a/lib/internal/modules/esm/resolve.js
 +++ b/lib/internal/modules/esm/resolve.js
 @@ -2,8 +2,11 @@
-
+ 
  const {
    ArrayIsArray,
 +  ArrayPrototypeFilter,
@@ -23,12 +23,12 @@ diff --git a/lib/internal/modules/esm/resolve.js b/lib/internal/modules/esm/reso
 +// use additional line to reduce merge conflicts
 +const { delimiter, toNamespacedPath } = require('path');
  const { URL, pathToFileURL, fileURLToPath, isURL, URLParse } = require('internal/url');
- const { getCWDURL, setOwnProperty } = require('internal/util');
+ const { getCWDURL, setOwnProperty, kEmptyObject } = require('internal/util');
  const { canParse: URLCanParse } = internalBinding('url');
 @@ -986,7 +992,50 @@
    protocol ??= parsed?.protocol;
    if (protocol === 'node:') { return { __proto__: null, url: specifier }; }
-
+ 
 +  const { dontUseNodePathWithEsm, nodePaths } = (function() {
 +    const isWindows = process.platform === 'win32';
 +    const dontUseNodePathWithEsm = (isWindows ? process.env.DISABLE_NODE_PATH_WITH_ESM :
@@ -43,7 +43,7 @@ diff --git a/lib/internal/modules/esm/resolve.js b/lib/internal/modules/esm/reso
 +    }
 +    return { dontUseNodePathWithEsm, 'nodePaths': ArrayPrototypeMap(paths, (p) => pathToFileURL(p).href) };
 +  })();
-
+ 
 +  function moduleResolveWithNodePath(specifier, base, conditions, preserveSymlinks) {
 +    try {
 +      return moduleResolve(

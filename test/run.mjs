@@ -1,12 +1,18 @@
-// Runs the smoke-test cases against a runtime image through the public Runtime Interface
-// Emulator.
+// Runs test cases against a runtime image through the public Runtime Interface Emulator.
 //
 // Usage: node test/run.mjs IMAGE PLATFORM [CASES.json]
-//   CASES.json defaults to test/cases.json. AWS credential and region variables set in the
-//   environment (for example from `aws configure export-credentials --format env`) are passed
-//   to the function, for cases that call AWS.
+//   CASES.json defaults to test/cases.json, the smoke tests; test/security-cases.json holds the
+//   security tests. AWS credential and region variables set in the environment (for example
+//   from `aws configure export-credentials --format env`) are passed to the function, for
+//   cases that call AWS.
+//
+// A case has:
+//   name, handler, event
+//   env         optional: environment variables for the function
+//   expect      optional: the invocation's response must contain these keys with equal values
+//   expectLogs  optional: the container's log must contain this text
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { isDeepStrictEqual } from "node:util";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -43,13 +49,22 @@ function docker(...args) {
   return execFileSync("docker", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
 
-// Every key in expected must be present in actual with an equal value.
+// The container's stdout and stderr.
+function logs(container) {
+  const result = spawnSync("docker", ["logs", container], { encoding: "utf8" });
+  return result.stdout + result.stderr;
+}
+
+// Every key in expected must be present in actual with an equal value. Arrays must have the
+// same length.
 function contains(actual, expected) {
   if (typeof expected !== "object" || expected === null) return isDeepStrictEqual(actual, expected);
+  if (Array.isArray(expected) && !(Array.isArray(actual) && actual.length === expected.length)) return false;
   if (typeof actual !== "object" || actual === null) return false;
   return Object.entries(expected).every(([k, v]) => contains(actual[k], v));
 }
 
+// invoke returns the function's response, parsed as JSON when it is JSON.
 async function invoke(port, event) {
   const deadline = Date.now() + STARTUP_TIMEOUT_MS;
   for (;;) {
@@ -58,7 +73,12 @@ async function invoke(port, event) {
         method: "POST",
         body: JSON.stringify(event),
       });
-      return await response.json();
+      const body = await response.text();
+      try {
+        return JSON.parse(body);
+      } catch {
+        return body;
+      }
     } catch (error) {
       if (Date.now() > deadline) throw error;
       await new Promise((resolve) => setTimeout(resolve, 250));
@@ -76,17 +96,23 @@ docker(
 
 let failures = 0;
 for (const testCase of cases) {
-  const container = docker("run", "-d", "--platform", platform, ...awsEnv, "-p", "127.0.0.1::8080", testImage, testCase.handler);
+  const env = Object.entries(testCase.env ?? {}).flatMap(([name, value]) => ["-e", `${name}=${value}`]);
+  const container = docker("run", "-d", "--platform", platform, ...awsEnv, ...env, "-p", "127.0.0.1::8080", testImage, testCase.handler);
   try {
     const port = docker("port", container, "8080/tcp").split(":").pop();
     const actual = await invoke(port, testCase.event);
-    if (contains(actual, testCase.expect)) {
+    const output = logs(container);
+    const responseOk = testCase.expect === undefined || contains(actual, testCase.expect);
+    const logsOk = testCase.expectLogs === undefined || output.includes(testCase.expectLogs);
+    if (responseOk && logsOk) {
       console.log(`pass  ${testCase.name}`);
-      if (actual.userAgent) console.log(`      user agent: ${actual.userAgent}`);
+      if (actual?.userAgent) console.log(`      user agent: ${actual.userAgent}`);
     } else {
       failures++;
-      console.log(`FAIL  ${testCase.name}\n  expected ${JSON.stringify(testCase.expect)}\n  actual   ${JSON.stringify(actual)}`);
-      console.log(docker("logs", container).replace(/^/gm, "  | "));
+      console.log(`FAIL  ${testCase.name}`);
+      if (!responseOk) console.log(`  expected ${JSON.stringify(testCase.expect)}\n  actual   ${JSON.stringify(actual)}`);
+      if (!logsOk) console.log(`  expected the log to contain ${JSON.stringify(testCase.expectLogs)}`);
+      console.log(output.replace(/^/gm, "  | "));
     }
   } finally {
     docker("rm", "-f", container);

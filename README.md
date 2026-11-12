@@ -27,9 +27,9 @@ runtimes/nodejs26.x/
   bootstrap, resolve-tls-profile.sh, tls-profiles/, ca-cert.pem, THIRD-PARTY-LICENSES.txt
   ric/                     the Runtime Interface Client and its addon's build tools, locked
   durable/                 the Durable Functions SDK, locked
-test/                      smoke tests through the public Runtime Interface Emulator
+test/                      smoke and security tests through the public Runtime Interface Emulator
 .github/workflows/
-  build-image.yml          builds, smoke-tests and pushes the arm64 image on a CodeBuild-hosted runner
+  build-image.yml          builds, tests and pushes the arm64 image on a CodeBuild-hosted runner
 ```
 
 ## Building
@@ -63,9 +63,24 @@ node test/run.mjs lambda-runtime/image:nodejs26.x-mainline-arm64 linux/arm64
 This runs five handlers (CommonJS, ES module, the bundled SDK through `require` and `import`,
 and an ES module import from a layer) through the public Runtime Interface Emulator.
 
+```sh
+node test/run.mjs lambda-runtime/image:nodejs26.x-mainline-arm64 linux/arm64 test/security-cases.json
+```
+
+This runs the security tests the same way. They check that:
+
+- the algorithms OpenSSL is configured without are unavailable, with and without the legacy
+  provider, TLS 1.2 is the minimum version, and no weak TLS cipher is offered;
+- `node` is position-independent with full RELRO, a non-executable stack and stack protection,
+  and no shipped library has an executable stack;
+- no file in `/var/lang` or `/var/runtime` is world-writable;
+- the experimental FFI module is disabled by default;
+- a TLS profile is applied only when `AWS_LAMBDA_TLS_PROFILE` asks for one, a customer
+  `OPENSSL_CONF` takes precedence over it, and an unknown profile fails initialization.
+
 ## Building on a CodeBuild-hosted runner
 
-`.github/workflows/build-image.yml` runs the build and the smoke tests on the arm64 CodeBuild
+`.github/workflows/build-image.yml` runs the build and the smoke and security tests on the arm64 CodeBuild
 runner project `project-aws-aws-lambda-nodejs-runtime-arm64`, for pull requests to `main`, pushes
 to `main` and on manual dispatch. A push also pushes the image to the ECR repository
 `aws-lambda-nodejs-runtime`, tagged `<commit>-arm64`, using the role in the `AWS_ROLE_ARN`

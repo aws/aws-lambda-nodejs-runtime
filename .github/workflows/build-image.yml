@@ -1,5 +1,5 @@
 # Builds the nodejs26.x mainline runtime image for arm64 on a CodeBuild-hosted runner and runs the
-# smoke tests through the Runtime Interface Emulator. On a push it also pushes the image to ECR,
+# smoke and security tests through the Runtime Interface Emulator. On a push it also pushes the image to ECR,
 # tagged <commit>-arm64, as the role that the deploy environment's OIDC token may assume.
 #
 # The CodeBuild label names the runner project; the extra labels override its instance size.
@@ -69,6 +69,9 @@ jobs:
 
       - name: Smoke-test the image
         run: node test/run.mjs lambda-runtime/image:nodejs26.x-mainline-arm64 linux/arm64
+
+      - name: Security-test the image
+        run: node test/run.mjs lambda-runtime/image:nodejs26.x-mainline-arm64 linux/arm64 test/security-cases.json
 
       - name: Configure AWS credentials (OIDC)
         if: github.event_name == 'push'

@@ -15,9 +15,7 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  id-token: write
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -33,6 +31,10 @@ jobs:
       - instance-size:2xlarge
     timeout-minutes: 120
     environment: ${{ github.event_name == 'push' && 'deploy' || '' }}
+    # id-token lets the push steps request the OIDC token the ECR role trusts.
+    permissions:
+      contents: read
+      id-token: write
     env:
       BUILDKIT_PROGRESS: plain
     steps:

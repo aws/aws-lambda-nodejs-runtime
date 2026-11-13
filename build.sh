@@ -150,7 +150,9 @@ case "$target" in
   image)
     build_lang
     build "$variant_stage" "$runtime_tag" "$SOURCE_DATE_EPOCH" $with_lang
-    build "image-$variant_stage" "lambda-runtime/image:nodejs${major}.x-${variant}-${arch}" "$SOURCE_DATE_EPOCH" $with_lang ;;
+    # The runtime image carries a full SLSA provenance attestation.
+    build "image-$variant_stage" "lambda-runtime/image:nodejs${major}.x-${variant}-${arch}" "$SOURCE_DATE_EPOCH" $with_lang \
+      --provenance=mode=max ;;
   *)
     build_lang
     build "$target" "lambda-runtime/$target:nodejs${major}.x-${arch}" "$SOURCE_DATE_EPOCH" $with_lang ;;

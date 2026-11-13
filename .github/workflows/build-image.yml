@@ -91,7 +91,15 @@ jobs:
         if: github.event_name == 'push'
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        # Tags are immutable, so a commit's image is pushed once; a re-run skips the push.
         run: |
-          image="$ECR_REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA-arm64"
+          tag="$GITHUB_SHA-arm64"
+          if existing=$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$tag" \
+              --query 'imageDetails[0].imageDigest' --output text 2> /tmp/describe-images.err); then
+            echo "$ECR_REPOSITORY:$tag is already published as $existing"
+            exit 0
+          fi
+          grep -q ImageNotFoundException /tmp/describe-images.err || { cat /tmp/describe-images.err >&2; exit 1; }
+          image="$ECR_REGISTRY/$ECR_REPOSITORY:$tag"
           docker tag lambda-runtime/image:nodejs26.x-mainline-arm64 "$image"
           docker push "$image"

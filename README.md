@@ -84,8 +84,10 @@ This runs the security tests the same way. They check that:
 runner project `project-aws-aws-lambda-nodejs-runtime-arm64`, for pull requests to `main`, pushes
 to `main` and on manual dispatch. A push also pushes the image to the ECR repository
 `aws-lambda-nodejs-runtime`, tagged `<commit>-arm64`, using the role in the `AWS_ROLE_ARN`
-secret, which the `deploy` environment's OIDC token may assume. Its runner labels request the
-`2xlarge` instance size. These parts of it depend on the runner:
+secret, which the `deploy` environment's OIDC token may assume. The repository's tags are
+immutable, and ECR signs each pushed image with AWS Signer (ECR managed signing); the image
+carries a SLSA provenance attestation from BuildKit. Its runner labels request the `2xlarge`
+instance size. These parts of it depend on the runner:
 
 - **Image store.** The build needs Docker's containerd image store, which CodeBuild's Docker
   daemon does not use by default. The workflow restarts `dockerd` with the store enabled, which

@@ -101,7 +101,8 @@ instance size. These parts of it depend on the runner:
   `nodejs.org`, `github.com` (OpenSSL and the emulator) and `registry.npmjs.org`. A runner whose
   network firewall allows only GitHub needs all of these allowed. Where `public.ecr.aws` is
   not reachable, set the repository variable `REGISTRY_MIRROR` to an ECR pull-through cache
-  of it.
+  of it. Where `registry.npmjs.org` is not reachable, set `NPM_REGISTRY` to the URL of a
+  CodeArtifact npm repository that mirrors it; `build.sh` takes the token as a build secret.
 
 To run the workflow without GitHub, run it with [`act`](https://github.com/nektos/act) on a
 CodeBuild host, mapping the job's first runner label to the host:

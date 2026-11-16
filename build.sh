@@ -35,6 +35,9 @@
 #   REGISTRY_MIRROR  pull the public.ecr.aws images from this registry instead, for example an
 #                  ECR pull-through cache (<account>.dkr.ecr.<region>.amazonaws.com/<prefix>);
 #                  the images are pinned by digest, so they are the same images
+#   NPMRC          an npm config file for the npm ci steps, for example one naming a registry
+#                  that mirrors the public npm registry and its token; passed as a build secret.
+#                  The lockfiles pin every package by integrity, so they are the same packages
 set -eu
 
 major=$1
@@ -108,6 +111,7 @@ build() {
     --build-arg NODE_CONFIGURE_OPTS \
     --build-arg SOURCE_DATE_EPOCH="$epoch" \
     --build-context base-src="$root/base" \
+    ${NPMRC:+--secret id=npmrc,src=$NPMRC} \
     ${BASE_IMAGE:+--build-context base=docker-image://$BASE_IMAGE} \
     "$@" \
     --output "type=image,name=$tag$output_opts" \

@@ -184,6 +184,9 @@ COPY --from=node /var/lang /var/lang
 # headers the RIC addon compiles against, copy /var/lang from the lang stage.
 # ---------------------------------------------------------------------------------------------
 
+# npm installs from the public registry unless build.sh passes an npmrc secret, which is mounted
+# as ~/.npmrc for the npm ci steps only and is not stored in any layer.
+#
 # The SDK is installed with npm ci from the per-major package.json and package-lock.json, with
 # install scripts disabled, then moved into the managed layout: the listed @aws-sdk packages in
 # @aws-sdk, and the rest of npm's tree under @aws-sdk/node_modules. layout.mjs moves the packages
@@ -194,7 +197,7 @@ COPY --from=lang /var/lang /var/lang
 ENV PATH=/var/lang/bin:$PATH
 WORKDIR /sdk
 COPY runtimes/nodejs${MAJOR_VERSION}.x/sdk/package.json runtimes/nodejs${MAJOR_VERSION}.x/sdk/package-lock.json runtimes/nodejs${MAJOR_VERSION}.x/sdk/layout.mjs ./
-RUN npm ci --ignore-scripts --no-audit --no-fund \
+RUN --mount=type=secret,id=npmrc,target=/root/.npmrc npm ci --ignore-scripts --no-audit --no-fund \
     && node layout.mjs /sdk /sdk/out
 
 # The RIC is installed with npm ci from the per-major package.json and package-lock.json, which
@@ -211,7 +214,7 @@ ENV PATH=/var/lang/bin:$PATH \
     npm_config_nodedir=/var/lang
 WORKDIR /ric
 COPY runtimes/nodejs${MAJOR_VERSION}.x/ric/package.json runtimes/nodejs${MAJOR_VERSION}.x/ric/package-lock.json ./
-RUN npm ci --ignore-scripts --no-audit --no-fund
+RUN --mount=type=secret,id=npmrc,target=/root/.npmrc npm ci --ignore-scripts --no-audit --no-fund
 WORKDIR /ric/node_modules/aws-lambda-ric
 RUN sh scripts/preinstall.sh && sh scripts/postinstall.sh \
     && test -f rapid-client.node
@@ -254,7 +257,7 @@ COPY --from=lang /var/lang /var/lang
 ENV PATH=/var/lang/bin:$PATH
 WORKDIR /durable
 COPY runtimes/nodejs${MAJOR_VERSION}.x/durable/package.json runtimes/nodejs${MAJOR_VERSION}.x/durable/package-lock.json ./
-RUN npm ci --ignore-scripts --no-audit --no-fund
+RUN --mount=type=secret,id=npmrc,target=/root/.npmrc npm ci --ignore-scripts --no-audit --no-fund
 
 # Its first layer is mainline's, so the variant is mainline plus one layer.
 FROM scratch AS durablefunction

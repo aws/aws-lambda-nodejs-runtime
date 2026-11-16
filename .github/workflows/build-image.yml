@@ -6,6 +6,9 @@
 # Repository variables:
 #   REGISTRY_MIRROR  optional: an ECR pull-through cache of public.ecr.aws for the builder and
 #                    base images (see build.sh). The runner's CodeBuild role pulls from it.
+#   NPM_REGISTRY     optional: the URL of a CodeArtifact npm repository to install the npm
+#                    packages from instead of the public registry. The runner's CodeBuild role
+#                    gets its token.
 name: Build runtime image
 
 on:
@@ -63,6 +66,26 @@ jobs:
         env:
           REGISTRY_MIRROR: ${{ vars.REGISTRY_MIRROR }}
         run: aws ecr get-login-password | docker login --username AWS --password-stdin "${REGISTRY_MIRROR%%/*}"
+
+      # The token is written to an npm config file in the job's temporary directory, which
+      # build.sh passes to the build as a secret.
+      - name: Configure the npm registry
+        if: vars.NPM_REGISTRY != ''
+        env:
+          NPM_REGISTRY: ${{ vars.NPM_REGISTRY }}
+        run: |
+          host=${NPM_REGISTRY#https://}
+          host=${host%%/*}
+          domain_and_owner=${host%%.d.codeartifact.*}
+          owner=${domain_and_owner##*-}
+          domain=${domain_and_owner%-*}
+          token=$(aws codeartifact get-authorization-token --domain "$domain" --domain-owner "$owner" \
+            --query authorizationToken --output text)
+          echo "::add-mask::$token"
+          npmrc="$RUNNER_TEMP/npmrc"
+          umask 077
+          printf 'registry=%s\n//%s:_authToken=%s\n' "$NPM_REGISTRY" "${NPM_REGISTRY#https:}" "$token" > "$npmrc"
+          echo "NPMRC=$npmrc" >> "$GITHUB_ENV"
 
       - name: Build the image
         env:

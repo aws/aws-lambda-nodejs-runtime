@@ -12,7 +12,7 @@ concurrency:
 
 env:
   SOURCE_ECR_REPOSITORY: aws-lambda-nodejs-runtime
-  INTEG_ECR_REPOSITORY: ${{ vars.INTEG_ECR_REPOSITORY }}
+  INTEG_ECR_REPOSITORY: ${{ secrets.INTEG_ECR_REPOSITORY }}
 
 jobs:
   integration-test:

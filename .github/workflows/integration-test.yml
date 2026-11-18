@@ -1,23 +1,8 @@
-# Integration test for the runtime image.
-#
-# For each architecture it pulls a published runtime image from ECR (the most recently pushed
-# tag, since there is no 'latest' tag), layers a hello-world handler onto it, deploys it as a
-# real Lambda container function with aws-actions/aws-lambda-deploy, invokes the function with
-# the AWS SDK and asserts a 200 response, then deletes the function and the image it pushed.
-#
-# Manual trigger only: the workflow creates and deletes real AWS resources. Authentication is
-# via GitHub OIDC into an IAM role created once with setup.md.
-#
-# Required repository configuration (see setup.md):
-#   secrets.AWS_INTEGRATION_ROLE_ARN   the GitHub OIDC role this workflow assumes
-#   secrets.AWS_LAMBDA_EXEC_ROLE_ARN   the Lambda function's execution role
-#   vars.AWS_REGION                    the region to deploy into
-#   vars.INTEG_ECR_REPOSITORY          optional: ECR repo for the hello-world image
-#                                      (default: aws-lambda-nodejs-runtime-integ)
 name: Integration test
 
 on:
   workflow_dispatch:
+  pull_request:
 
 permissions: {}
 
@@ -26,10 +11,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # The repository the build-image workflow publishes runtime images to, tagged <sha>-<arch>.
   SOURCE_ECR_REPOSITORY: aws-lambda-nodejs-runtime
-  # The repository this workflow pushes the derived hello-world image to.
-  INTEG_ECR_REPOSITORY: ${{ vars.INTEG_ECR_REPOSITORY || 'aws-lambda-nodejs-runtime-integ' }}
+  INTEG_ECR_REPOSITORY: ${{ vars.INTEG_ECR_REPOSITORY }}
 
 jobs:
   integration-test:
@@ -37,7 +20,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
-      # One architecture's failure should not cancel the other.
       fail-fast: false
       matrix:
         include:
@@ -45,7 +27,7 @@ jobs:
             lambda_arch: x86_64
           - arch: arm64
             lambda_arch: arm64
-    # id-token lets configure-aws-credentials request the OIDC token the role trusts.
+  
     permissions:
       contents: read
       id-token: write

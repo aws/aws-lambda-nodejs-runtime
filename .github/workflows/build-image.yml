@@ -1,8 +1,10 @@
-# Builds the nodejs26.x mainline runtime image for arm64 on a CodeBuild-hosted runner and runs the
-# smoke and security tests through the Runtime Interface Emulator. On a push it also pushes the image to ECR,
-# tagged <commit>-arm64, as the role that the deploy environment's OIDC token may assume.
+# Builds the nodejs26.x mainline runtime image for arm64 and amd64, each on its own CodeBuild-hosted
+# runner, and runs the smoke and security tests through the Runtime Interface Emulator. On a push it
+# also pushes each image to ECR, tagged <commit>-<arch>, as the role that the deploy environment's
+# OIDC token may assume.
 #
 # The CodeBuild label names the runner project; the extra labels override its instance size.
+# The jobs are named build-<arch>, the status check names the main branch's ruleset requires.
 # Repository variables:
 #   REGISTRY_MIRROR  optional: an ECR pull-through cache of public.ecr.aws for the builder and
 #                    base images (see build.sh). The runner's CodeBuild role pulls from it.
@@ -28,9 +30,20 @@ env:
   ECR_REPOSITORY: aws-lambda-nodejs-runtime
 
 jobs:
-  build-arm64:
+  build:
+    name: build-${{ matrix.arch }}
+    strategy:
+      # A cancelled job shows as a failed check, so one architecture's failure does not cancel
+      # the other.
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            project: project-aws-aws-lambda-nodejs-runtime-arm64
+          - arch: amd64
+            project: project-aws-aws-lambda-nodejs-runtime-x86
     runs-on:
-      - codebuild-project-aws-aws-lambda-nodejs-runtime-arm64-${{ github.run_id }}-${{ github.run_attempt }}
+      - codebuild-${{ matrix.project }}-${{ github.run_id }}-${{ github.run_attempt }}
       - instance-size:2xlarge
     timeout-minutes: 120
     environment: ${{ github.event_name == 'push' && 'deploy' || '' }}
@@ -40,6 +53,8 @@ jobs:
       id-token: write
     env:
       BUILDKIT_PROGRESS: plain
+      ARCH: ${{ matrix.arch }}
+      IMAGE: lambda-runtime/image:nodejs26.x-mainline-${{ matrix.arch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -90,13 +105,13 @@ jobs:
       - name: Build the image
         env:
           REGISTRY_MIRROR: ${{ vars.REGISTRY_MIRROR }}
-        run: ./build.sh 26 linux/arm64
+        run: ./build.sh 26 "linux/$ARCH"
 
       - name: Smoke-test the image
-        run: node test/run.mjs lambda-runtime/image:nodejs26.x-mainline-arm64 linux/arm64
+        run: node test/run.mjs "$IMAGE" "linux/$ARCH"
 
       - name: Security-test the image
-        run: node test/run.mjs lambda-runtime/image:nodejs26.x-mainline-arm64 linux/arm64 test/security-cases.json
+        run: node test/run.mjs "$IMAGE" "linux/$ARCH" test/security-cases.json
 
       - name: Configure AWS credentials (OIDC)
         if: github.event_name == 'push'
@@ -116,7 +131,7 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         # Tags are immutable, so a commit's image is pushed once; a re-run skips the push.
         run: |
-          tag="$GITHUB_SHA-arm64"
+          tag="$GITHUB_SHA-$ARCH"
           if existing=$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$tag" \
               --query 'imageDetails[0].imageDigest' --output text 2> /tmp/describe-images.err); then
             echo "$ECR_REPOSITORY:$tag is already published as $existing"
@@ -124,5 +139,5 @@ jobs:
           fi
           grep -q ImageNotFoundException /tmp/describe-images.err || { cat /tmp/describe-images.err >&2; exit 1; }
           image="$ECR_REGISTRY/$ECR_REPOSITORY:$tag"
-          docker tag lambda-runtime/image:nodejs26.x-mainline-arm64 "$image"
+          docker tag "$IMAGE" "$image"
           docker push "$image"

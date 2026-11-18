@@ -6,7 +6,7 @@
     "expect": {
       "event": { "key": "value" },
       "executionEnv": "AWS_Lambda_nodejs26.x",
-      "node": "v26.13.0"
+      "node": "v26.13.1"
     }
   },
   {

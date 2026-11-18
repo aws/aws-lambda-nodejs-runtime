@@ -1,0 +1,139 @@
+# Integration test for the runtime image.
+#
+# For each architecture it pulls a published runtime image from ECR (the most recently pushed
+# tag, since there is no 'latest' tag), layers a hello-world handler onto it, deploys it as a
+# real Lambda container function with aws-actions/aws-lambda-deploy, invokes the function with
+# the AWS SDK and asserts a 200 response, then deletes the function and the image it pushed.
+#
+# Manual trigger only: the workflow creates and deletes real AWS resources. Authentication is
+# via GitHub OIDC into an IAM role created once with setup.md.
+#
+# Required repository configuration (see setup.md):
+#   secrets.AWS_INTEGRATION_ROLE_ARN   the GitHub OIDC role this workflow assumes
+#   secrets.AWS_LAMBDA_EXEC_ROLE_ARN   the Lambda function's execution role
+#   vars.AWS_REGION                    the region to deploy into
+#   vars.INTEG_ECR_REPOSITORY          optional: ECR repo for the hello-world image
+#                                      (default: aws-lambda-nodejs-runtime-integ)
+name: Integration test
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # The repository the build-image workflow publishes runtime images to, tagged <sha>-<arch>.
+  SOURCE_ECR_REPOSITORY: aws-lambda-nodejs-runtime
+  # The repository this workflow pushes the derived hello-world image to.
+  INTEG_ECR_REPOSITORY: ${{ vars.INTEG_ECR_REPOSITORY || 'aws-lambda-nodejs-runtime-integ' }}
+
+jobs:
+  integration-test:
+    name: integration-test-${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      # One architecture's failure should not cancel the other.
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            lambda_arch: x86_64
+          - arch: arm64
+            lambda_arch: arm64
+    # id-token lets configure-aws-credentials request the OIDC token the role trusts.
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ARCH: ${{ matrix.arch }}
+      FUNCTION_NAME: nodejs-runtime-integ-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+      IMAGE_TAG: integ-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_INTEGRATION_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Resolve the latest runtime image for ${{ matrix.arch }}
+        id: resolve
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          set -euo pipefail
+          # Images are published as <commit-sha>-<arch> with no 'latest' tag, so take the most
+          # recently pushed tag whose suffix matches this architecture.
+          tag=$(aws ecr describe-images --repository-name "$SOURCE_ECR_REPOSITORY" \
+            --query "reverse(sort_by(imageDetails[?imageTags], &imagePushedAt))[].imageTags[]" \
+            --output text | tr '\t' '\n' | grep -E -- "-${ARCH}$" | head -n1 || true)
+          if [ -z "$tag" ]; then
+            echo "no image tagged '*-${ARCH}' found in ${SOURCE_ECR_REPOSITORY}" >&2
+            exit 1
+          fi
+          echo "runtime image tag: $tag"
+          echo "runtime_image=${ECR_REGISTRY}/${SOURCE_ECR_REPOSITORY}:${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push the hello-world image
+        id: build
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          RUNTIME_IMAGE: ${{ steps.resolve.outputs.runtime_image }}
+        run: |
+          set -euo pipefail
+          image="${ECR_REGISTRY}/${INTEG_ECR_REPOSITORY}:${IMAGE_TAG}"
+          # Single-platform image with no attestations: Lambda requires a Docker media-type
+          # manifest, not an OCI image index.
+          docker buildx build \
+            --platform "linux/${ARCH}" \
+            --provenance=false --sbom=false \
+            --build-arg "RUNTIME_IMAGE=${RUNTIME_IMAGE}" \
+            --tag "$image" \
+            --push \
+            test/integration
+          echo "image_uri=${image}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy the Lambda function
+        uses: aws-actions/aws-lambda-deploy@29ea35c124579506cf0475e20df36198eb670d89 # v1.1.0
+        with:
+          function-name: ${{ env.FUNCTION_NAME }}
+          package-type: Image
+          image-uri: ${{ steps.build.outputs.image_uri }}
+          role: ${{ secrets.AWS_LAMBDA_EXEC_ROLE_ARN }}
+          architectures: ${{ matrix.lambda_arch }}
+          memory-size: 256
+          timeout: 30
+
+      - name: Invoke the function and assert 200
+        working-directory: test/integration
+        run: |
+          set -euo pipefail
+          npm install --no-audit --no-fund
+          node invoke.mjs "$FUNCTION_NAME"
+
+      - name: Destroy the Lambda function
+        if: always()
+        run: |
+          aws lambda delete-function --function-name "$FUNCTION_NAME" || true
+
+      - name: Delete the pushed ECR image
+        if: always()
+        run: |
+          aws ecr batch-delete-image \
+            --repository-name "$INTEG_ECR_REPOSITORY" \
+            --image-ids imageTag="$IMAGE_TAG" || true

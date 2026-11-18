@@ -15,9 +15,9 @@ name: Build runtime image
 
 on:
   push:
-    branches: [main]
+    branches: [main, svozza/runtime-image]
   pull_request:
-    branches: [main]
+    branches: [main, svozza/runtime-image]
   workflow_dispatch:
 
 permissions: {}

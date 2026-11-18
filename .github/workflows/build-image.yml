@@ -40,8 +40,10 @@ jobs:
         include:
           - arch: arm64
             project: project-aws-aws-lambda-nodejs-runtime-arm64
+            lambda_arch: arm64
           - arch: amd64
             project: project-aws-aws-lambda-nodejs-runtime-x86
+            lambda_arch: x86_64
     runs-on:
       - codebuild-${{ matrix.project }}-${{ github.run_id }}-${{ github.run_attempt }}
       - instance-size:2xlarge
@@ -55,6 +57,8 @@ jobs:
       BUILDKIT_PROGRESS: plain
       ARCH: ${{ matrix.arch }}
       IMAGE: lambda-runtime/image:nodejs26.x-mainline-${{ matrix.arch }}
+      FUNCTION_NAME: nodejs-runtime-integ-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+      IMAGE_TAG: integ-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -113,7 +117,72 @@ jobs:
       - name: Security-test the image
         run: node test/run.mjs "$IMAGE" "linux/$ARCH" test/security-cases.json
 
-      - name: Configure AWS credentials (OIDC)
+      - name: Configure AWS credentials (integration test)
+        if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_INTEGRATION_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Log in to Amazon ECR (integration test)
+        if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+        id: login-ecr-integ
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      - name: Build and push the hello-world test image
+        if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+        id: integ-build
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr-integ.outputs.registry }}
+          INTEG_ECR_REPOSITORY: ${{ secrets.INTEG_ECR_REPOSITORY }}
+        run: |
+          set -euo pipefail
+          image="${ECR_REGISTRY}/${INTEG_ECR_REPOSITORY}:${IMAGE_TAG}"
+          # Layer the hello-world handler onto the image just built locally. Single-platform and
+          # no attestations: Lambda needs a Docker media-type manifest, not an OCI image index.
+          docker buildx build \
+            --platform "linux/${ARCH}" \
+            --provenance=false --sbom=false \
+            --build-arg "RUNTIME_IMAGE=${IMAGE}" \
+            --tag "$image" \
+            --push \
+            test/integration
+          echo "image_uri=${image}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy the test Lambda function
+        if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+        uses: aws-actions/aws-lambda-deploy@29ea35c124579506cf0475e20df36198eb670d89 # v1.1.0
+        with:
+          function-name: ${{ env.FUNCTION_NAME }}
+          package-type: Image
+          image-uri: ${{ steps.integ-build.outputs.image_uri }}
+          role: ${{ secrets.AWS_LAMBDA_EXEC_ROLE_ARN }}
+          architectures: ${{ matrix.lambda_arch }}
+          memory-size: 256
+          timeout: 30
+
+      - name: Invoke the test function and assert 200
+        if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+        working-directory: test/integration
+        run: |
+          set -euo pipefail
+          npm install --no-audit --no-fund
+          node invoke.mjs "$FUNCTION_NAME"
+
+      - name: Destroy the test Lambda function
+        if: always() && (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))
+        run: aws lambda delete-function --function-name "$FUNCTION_NAME" || true
+
+      - name: Delete the pushed test image
+        if: always() && (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))
+        env:
+          INTEG_ECR_REPOSITORY: ${{ secrets.INTEG_ECR_REPOSITORY }}
+        run: |
+          aws ecr batch-delete-image \
+            --repository-name "$INTEG_ECR_REPOSITORY" \
+            --image-ids imageTag="$IMAGE_TAG" || true
+
+      - name: Configure AWS credentials (source push)
         if: github.event_name == 'push'
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:

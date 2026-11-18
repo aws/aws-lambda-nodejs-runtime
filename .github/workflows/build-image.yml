@@ -84,7 +84,7 @@ jobs:
           echo "::add-mask::$token"
           npmrc="$RUNNER_TEMP/npmrc"
           umask 077
-          printf 'registry=%s\n//%s:_authToken=%s\n' "$NPM_REGISTRY" "${NPM_REGISTRY#https:}" "$token" > "$npmrc"
+          printf 'registry=%s\n%s:_authToken=%s\n' "$NPM_REGISTRY" "${NPM_REGISTRY#https:}" "$token" > "$npmrc"
           echo "NPMRC=$npmrc" >> "$GITHUB_ENV"
 
       - name: Build the image

@@ -2,7 +2,7 @@
 
 This repository builds the Lambda `nodejs26.x` runtime image from public sources with Docker
 alone: no internal build tools, no checked-in binaries. It shows what the build could look like once it moves
-to GitHub. It has been tested on arm64 only.
+to GitHub. It is built and tested for arm64 and amd64.
 
 The result matches the managed `nodejs26.x` image closely; see
 [How it compares](#how-it-compares-to-the-managed-image).
@@ -29,7 +29,7 @@ runtimes/nodejs26.x/
   durable/                 the Durable Functions SDK, locked
 test/                      smoke and security tests through the public Runtime Interface Emulator
 .github/workflows/
-  build-image.yml          builds, tests and pushes the arm64 image on a CodeBuild-hosted runner
+  build-image.yml          builds, tests and pushes the arm64 and amd64 images on CodeBuild-hosted runners
 ```
 
 ## Building
@@ -40,14 +40,16 @@ Docker 29 or later; see below.
 ```sh
 ./build.sh 26 linux/arm64                    # mainline runtime image
 ./build.sh 26 linux/arm64 DurableFunction    # DurableFunction variant
+./build.sh 26 linux/amd64                    # mainline runtime image for amd64
 ```
 
 The first build compiles GCC, OpenSSL, and Node and takes 1.5–2 hours on 4 cores; after that
 `/var/lang` comes from the cache. To reuse a built `/var/lang` without the cache, for example after
-`docker builder prune`, push `lambda-runtime/lang:nodejs26.x-arm64` to a registry you control and
+`docker builder prune`, push `lambda-runtime/lang:nodejs26.x-<arch>` to a registry you control and
 set `LANG_IMAGE` to it by digest: BuildKit looks an image name up on its registry before the local
 image store, and an unqualified name on Docker Hub. The image is tagged
-`lambda-runtime/image:nodejs26.x-<variant>-arm64`. `build.sh` lists the other targets.
+`lambda-runtime/image:nodejs26.x-<variant>-<arch>`, where `<arch>` is `arm64` or `amd64`.
+`build.sh` lists the other targets.
 
 Builds are reproducible on Docker 29 or later: the same commit gives a byte-identical image
 (apart from the base's package database, see below). File timestamps come from the latest
@@ -80,10 +82,12 @@ This runs the security tests the same way. They check that:
 
 ## Building on a CodeBuild-hosted runner
 
-`.github/workflows/build-image.yml` runs the build and the smoke and security tests on the arm64 CodeBuild
-runner project `project-aws-aws-lambda-nodejs-runtime-arm64`, for pull requests to `main`, pushes
-to `main` and on manual dispatch. A push also pushes the image to the ECR repository
-`aws-lambda-nodejs-runtime`, tagged `<commit>-arm64`, using the role in the `AWS_ROLE_ARN`
+`.github/workflows/build-image.yml` runs the build and the smoke and security tests for each
+architecture on its own CodeBuild runner project, for pull requests to `main`, pushes to `main`
+and on manual dispatch: `build-arm64` on `project-aws-aws-lambda-nodejs-runtime-arm64` (Amazon
+Linux) and `build-amd64` on `project-aws-aws-lambda-nodejs-runtime-x86` (Ubuntu). A push also
+pushes each image to the ECR repository `aws-lambda-nodejs-runtime`, tagged `<commit>-arm64` and
+`<commit>-amd64`, using the role in the `AWS_ROLE_ARN`
 secret, which the `deploy` environment's OIDC token may assume. The repository's tags are
 immutable, and ECR signs each pushed image with AWS Signer (ECR managed signing); the image
 carries a SLSA provenance attestation from BuildKit. Its runner labels request the `2xlarge`
@@ -105,12 +109,16 @@ instance size. These parts of it depend on the runner:
   CodeArtifact npm repository that mirrors it; `build.sh` takes the token as a build secret.
 
 To run the workflow without GitHub, run it with [`act`](https://github.com/nektos/act) on a
-CodeBuild host, mapping the job's first runner label to the host:
+CodeBuild host, mapping each job's first runner label to the host:
 
 ```sh
 act workflow_dispatch -W .github/workflows/build-image.yml \
-  -P codebuild-project-aws-aws-lambda-nodejs-runtime-arm64-1-1=-self-hosted
+  -P codebuild-project-aws-aws-lambda-nodejs-runtime-arm64-1-1=-self-hosted \
+  -P codebuild-project-aws-aws-lambda-nodejs-runtime-x86-1-1=-self-hosted
 ```
+
+Both jobs run on the host they are mapped to, so on a host of one architecture pass
+`--matrix arch:arm64` or `--matrix arch:amd64` to run only that architecture's job.
 
 `act` evaluates `github.run_id` and `github.run_attempt` as `1`, which gives the `-1-1`
 suffix. With `--var REGISTRY_MIRROR=...`, also pass the CodeBuild credential and region
@@ -170,4 +178,3 @@ Compared with the managed image at
   Sorting the list would fix it upstream.
 - **Release identifier.** `runtime-release` takes its value from the commit timestamp; the
   release process may want a counter instead.
-- **amd64** has not been built yet.

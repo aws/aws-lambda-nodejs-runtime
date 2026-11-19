@@ -1,5 +1,7 @@
 ## AWS Lambda Node.js Runtime
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/aws/aws-lambda-nodejs-runtime/badge)](https://scorecard.dev/viewer/?uri=github.com/aws/aws-lambda-nodejs-runtime)
+
 This repository contains the source and build definition of the AWS Lambda Node.js runtime
 image. The image holds everything a Node.js function needs to run on Lambda: Amazon Linux system
 libraries, Node.js, the AWS SDK for JavaScript v3, root certificates and the Lambda

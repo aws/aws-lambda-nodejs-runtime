@@ -98,7 +98,14 @@ fi
 build() {
   stage=$1 tag=$2 epoch=$3
   shift 3
-  SOURCE_DATE_EPOCH=$epoch docker buildx build ${BUILDX_FLAGS:-} \
+  # Persist/restore a BuildKit layer cache per stage+arch when BUILD_CACHE_REF is set. Keying by
+  # stage keeps the expensive lang/gcc/node cache from being overwritten by a later, cheaper stage.
+  cache_flags=
+  if [ -n "${BUILD_CACHE_REF:-}" ]; then
+    _cache_ref="${BUILD_CACHE_REF}:${arch}-${stage}"
+    cache_flags="--cache-from type=registry,ref=${_cache_ref} --cache-to type=registry,ref=${_cache_ref},mode=max,image-manifest=true,oci-mediatypes=true"
+  fi
+  SOURCE_DATE_EPOCH=$epoch docker buildx build ${BUILDX_FLAGS:-} $cache_flags \
     --platform "$platform" \
     --target "$stage" \
     --build-arg BASE_MINIMAL="$AL2023_MINIMAL" \

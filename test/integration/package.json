@@ -1,0 +1,10 @@
+{
+  "name": "nodejs-runtime-integration-test",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SDK invoke client for the runtime image integration test",
+  "dependencies": {
+    "@aws-sdk/client-lambda": "^3.0.0"
+  }
+}

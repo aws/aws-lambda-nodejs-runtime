@@ -103,7 +103,10 @@ test/                      smoke and security tests
 ## Continuous integration
 
 `.github/workflows/build-image.yml` builds the image for each architecture on a native runner
-and runs the smoke and security tests, on every pull request and every push to `main`. On a push
+and runs the smoke and security tests, on pull requests and pushes to `main` that change build inputs, tests, or other files outside
+the documentation paths. Changes limited to top-level Markdown files, `LICENSE`, `NOTICE`,
+`docs/`, or `.github/PULL_REQUEST_TEMPLATE.md` skip the build and tests on both architectures.
+A manual workflow run always builds and tests the image. On a qualifying push
 to `main` it also publishes each image to Amazon ECR, tagged `<commit>-<arch>`. Published images
 are signed with AWS Signer and carry a SLSA provenance attestation.
 

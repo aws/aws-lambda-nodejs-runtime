@@ -65,9 +65,27 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # Keep the required architecture checks visible on docs-only PRs. The PR checkout is
+      # GitHub's test merge commit, so compare its tree with the event's base commit.
+      - name: Check for changes that need an image build
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" != workflow_dispatch && -n "$BASE_SHA" ]] &&
+            git diff --quiet --no-renames "$BASE_SHA" HEAD -- . \
+              ':(top,exclude,glob)*.md' ':(top,exclude)LICENSE' ':(top,exclude)NOTICE' \
+              ':(top,exclude)docs/' ':(top,exclude).github/PULL_REQUEST_TEMPLATE.md'; then
+            echo 'Only documentation changed. Skipping the runtime image build and tests.'
+            exit 0
+          fi
+          echo 'build=true' >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then echo 'publish=true' >> "$GITHUB_OUTPUT"; fi
+
       # build.sh writes to the containerd image store and later builds read those images back
       # as build contexts, which the classic image store cannot do.
       - name: Use the containerd image store
+        if: steps.changes.outputs.build == 'true'
         run: |
           if docker info -f '{{ .DriverStatus }}' | grep -q io.containerd.snapshotter; then exit 0; fi
           mkdir -p /etc/docker
@@ -81,7 +99,7 @@ jobs:
           docker buildx version
 
       - name: Log in to the registry mirror
-        if: vars.REGISTRY_MIRROR != ''
+        if: steps.changes.outputs.build == 'true' && vars.REGISTRY_MIRROR != ''
         env:
           REGISTRY_MIRROR: ${{ vars.REGISTRY_MIRROR }}
         run: aws ecr get-login-password | docker login --username AWS --password-stdin "${REGISTRY_MIRROR%%/*}"
@@ -89,7 +107,7 @@ jobs:
       # The token is written to an npm config file in the job's temporary directory, which
       # build.sh passes to the build as a secret.
       - name: Configure the npm registry
-        if: vars.NPM_REGISTRY != ''
+        if: steps.changes.outputs.build == 'true' && vars.NPM_REGISTRY != ''
         env:
           NPM_REGISTRY: ${{ vars.NPM_REGISTRY }}
         run: |
@@ -107,30 +125,33 @@ jobs:
           echo "NPMRC=$npmrc" >> "$GITHUB_ENV"
 
       - name: Build the image
+        if: steps.changes.outputs.build == 'true'
         env:
           REGISTRY_MIRROR: ${{ vars.REGISTRY_MIRROR }}
         run: ./build.sh 26 "linux/$ARCH"
 
       - name: Smoke-test the image
+        if: steps.changes.outputs.build == 'true'
         run: node test/run.mjs "$IMAGE" "linux/$ARCH"
 
       - name: Security-test the image
+        if: steps.changes.outputs.build == 'true'
         run: node test/run.mjs "$IMAGE" "linux/$ARCH" test/security-cases.json
 
       - name: Configure AWS credentials (integration test)
-        if: github.event_name == 'push'
+        if: steps.changes.outputs.publish == 'true'
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ secrets.AWS_INTEGRATION_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Log in to Amazon ECR (integration test)
-        if: github.event_name == 'push'
+        if: steps.changes.outputs.publish == 'true'
         id: login-ecr-integ
         uses: aws-actions/amazon-ecr-login@7290e214a610b32bc0eef81748948b6d466a8783 # v2.2.0
 
       - name: Build and push the hello-world test image
-        if: github.event_name == 'push'
+        if: steps.changes.outputs.publish == 'true'
         id: integ-build
         env:
           ECR_REGISTRY: ${{ steps.login-ecr-integ.outputs.registry }}
@@ -150,7 +171,7 @@ jobs:
           echo "image_uri=${image}" >> "$GITHUB_OUTPUT"
 
       - name: Deploy the test Lambda function
-        if: github.event_name == 'push'
+        if: steps.changes.outputs.publish == 'true'
         uses: aws-actions/aws-lambda-deploy@d496277188b89f0be02d7a2216fc912c0427702a # v1.1.2
         with:
           function-name: ${{ env.FUNCTION_NAME }}
@@ -162,7 +183,7 @@ jobs:
           timeout: 30
 
       - name: Invoke the test function and assert 200
-        if: github.event_name == 'push'
+        if: steps.changes.outputs.publish == 'true'
         working-directory: test/integration
         run: |
           set -euo pipefail
@@ -174,11 +195,11 @@ jobs:
           node invoke.mjs "$FUNCTION_NAME"
 
       - name: Destroy the test Lambda function
-        if: always() && github.event_name == 'push'
+        if: always() && steps.changes.outputs.publish == 'true'
         run: aws lambda delete-function --function-name "$FUNCTION_NAME" || true
 
       - name: Delete the pushed test image
-        if: always() && github.event_name == 'push'
+        if: always() && steps.changes.outputs.publish == 'true'
         env:
           INTEG_ECR_REPOSITORY: ${{ secrets.INTEG_ECR_REPOSITORY }}
         run: |
@@ -187,19 +208,19 @@ jobs:
             --image-ids imageTag="$IMAGE_TAG" || true
 
       - name: Configure AWS credentials (source push)
-        if: github.event_name == 'push'
+        if: steps.changes.outputs.publish == 'true'
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Log in to Amazon ECR
-        if: github.event_name == 'push'
+        if: steps.changes.outputs.publish == 'true'
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@7290e214a610b32bc0eef81748948b6d466a8783 # v2.2.0
 
       - name: Push the image
-        if: github.event_name == 'push'
+        if: steps.changes.outputs.publish == 'true'
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         # Tags are immutable, so a commit's image is pushed once; a re-run skips the push.

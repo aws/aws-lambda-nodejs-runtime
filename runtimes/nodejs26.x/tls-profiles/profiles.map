@@ -1,0 +1,21 @@
+# TLS profile table. Exact match on the whole key.
+# Format: <key> <config-basename>
+# Keys are either a concrete profile name (commercial/2025) or a partition the sandbox
+# sends as AWS_LAMBDA_TLS_PROFILE (aws, aws-cn). All partitions resolve to
+# commercial-2025 for now.
+
+# Profile names
+commercial/2025    commercial-2025
+commercial/2026    commercial-2026
+cnsa               cnsa-1.0
+cnsa/1.0           cnsa-1.0
+
+# Partitions
+aws                commercial-2025
+aws-cn             commercial-2025
+aws-us-gov         commercial-2025
+aws-iso            commercial-2025
+aws-iso-b          commercial-2025
+aws-iso-e          commercial-2025
+aws-iso-f          commercial-2025
+aws-eusc           commercial-2025

@@ -1,0 +1,18 @@
+diff --git a/test/addons/openssl-providers/providers.cjs b/test/addons/openssl-providers/providers.cjs
+index fc0f93ef..887508ca 100644
+--- a/test/addons/openssl-providers/providers.cjs
++++ b/test/addons/openssl-providers/providers.cjs
+@@ -57,13 +57,6 @@ const providers = {
+         plaintextLength: 16,
+         unavailableCode: 'ERR_OSSL_EVP_UNSUPPORTED',
+       },
+-      {
+-        name: 'idea',
+-        keyLength: 16,
+-        ivLength: 8,
+-        plaintextLength: 16,
+-        unavailableCode: 'ERR_OSSL_EVP_UNSUPPORTED',
+-      },
+     ],
+     hashes: ['md4', 'whirlpool'],
+   },

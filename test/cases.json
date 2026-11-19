@@ -1,0 +1,36 @@
+[
+  {
+    "name": "CommonJS handler receives the event and runtime environment",
+    "handler": "echo.handler",
+    "event": { "key": "value" },
+    "expect": {
+      "event": { "key": "value" },
+      "executionEnv": "AWS_Lambda_nodejs26.x",
+      "node": "v26.13.1"
+    }
+  },
+  {
+    "name": "ES module handler",
+    "handler": "esm.handler",
+    "event": {},
+    "expect": { "module": "esm" }
+  },
+  {
+    "name": "CommonJS require of the bundled SDK",
+    "handler": "sdk-cjs.handler",
+    "event": {},
+    "expect": { "s3Client": "function" }
+  },
+  {
+    "name": "ES module import of the bundled SDK",
+    "handler": "sdk-esm.handler",
+    "event": {},
+    "expect": { "s3Client": "function" }
+  },
+  {
+    "name": "ES module import from a layer through NODE_PATH",
+    "handler": "layer-esm.handler",
+    "event": {},
+    "expect": { "fromLayer": true }
+  }
+]

@@ -1,0 +1,87 @@
+diff --git a/lib/internal/modules/esm/resolve.js b/lib/internal/modules/esm/resolve.js
+--- a/lib/internal/modules/esm/resolve.js
++++ b/lib/internal/modules/esm/resolve.js
+@@ -2,8 +2,11 @@
+ 
+ const {
+   ArrayIsArray,
++  ArrayPrototypeFilter,
+   ArrayPrototypeJoin,
+   ArrayPrototypeMap,
++  ArrayPrototypeUnshiftApply,
++  Boolean,
+   JSONStringify,
+   ObjectGetOwnPropertyNames,
+   ObjectPrototypeHasOwnProperty,
+@@ -27,8 +30,11 @@
+ const { BuiltinModule } = require('internal/bootstrap/realm');
+ const fs = require('fs');
+ const { getOptionValue } = require('internal/options');
++const { safeGetenv } = internalBinding('credentials');
+ // Do not eagerly grab .manifest, it may be in TDZ
+ const { sep, posix: { relative: relativePosixPath }, resolve, join } = require('path');
++// use additional line to reduce merge conflicts
++const { delimiter, toNamespacedPath } = require('path');
+ const { URL, pathToFileURL, fileURLToPath, isURL, URLParse } = require('internal/url');
+ const { getCWDURL, setOwnProperty, kEmptyObject } = require('internal/util');
+ const { canParse: URLCanParse } = internalBinding('url');
+@@ -986,7 +992,50 @@
+   protocol ??= parsed?.protocol;
+   if (protocol === 'node:') { return { __proto__: null, url: specifier }; }
+ 
++  const { dontUseNodePathWithEsm, nodePaths } = (function() {
++    const isWindows = process.platform === 'win32';
++    const dontUseNodePathWithEsm = (isWindows ? process.env.DISABLE_NODE_PATH_WITH_ESM :
++      safeGetenv('DISABLE_NODE_PATH_WITH_ESM')) === '1';
++    const paths = [];
++    const nodePath = isWindows ? process.env.NODE_PATH : safeGetenv('NODE_PATH');
++    if (nodePath) {
++      ArrayPrototypeUnshiftApply(paths, ArrayPrototypeFilter(
++        StringPrototypeSplit(nodePath, delimiter),
++        Boolean
++      ));
++    }
++    return { dontUseNodePathWithEsm, 'nodePaths': ArrayPrototypeMap(paths, (p) => pathToFileURL(p).href) };
++  })();
+ 
++  function moduleResolveWithNodePath(specifier, base, conditions, preserveSymlinks) {
++    try {
++      return moduleResolve(
++        specifier,
++        base,
++        conditions,
++        preserveSymlinks
++      );
++    } catch (error) {
++      if (error.code === 'ERR_MODULE_NOT_FOUND' ||
++          error.code === 'ERR_UNSUPPORTED_DIR_IMPORT') {
++        for (const path of nodePaths) {
++          try {
++            return moduleResolve(
++              specifier,
++              path,
++              conditions,
++              preserveSymlinks
++            );
++          } catch {
++            continue;
++          }
++        }
++      }
++
++      throw error;
++    }
++  }
++
+   const isMain = parentURL === undefined;
+   if (isMain) {
+     parentURL = getCWDURL().href;
+@@ -1003,7 +1052,7 @@
+   conditions = getConditionsSet(conditions);
+   let url;
+   try {
+-    url = moduleResolve(
++    url = (dontUseNodePathWithEsm ? moduleResolve : moduleResolveWithNodePath)(
+       specifier,
+       parentURL,
+       conditions,

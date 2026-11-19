@@ -1,0 +1,84 @@
+[
+  {
+    "name": "Excluded algorithms are unavailable and TLS defaults are strong",
+    "handler": "security.handler",
+    "event": {},
+    "expect": {
+      "excludedCiphers": [],
+      "excludedHashes": [],
+      "excludedCurves": [],
+      "tlsMinVersion": "TLSv1.2",
+      "weakTlsCiphers": []
+    }
+  },
+  {
+    "name": "Excluded algorithms stay unavailable with the legacy provider loaded",
+    "handler": "security.handler",
+    "env": { "NODE_OPTIONS": "--openssl-legacy-provider" },
+    "event": {},
+    "expect": {
+      "excludedCiphers": [],
+      "excludedHashes": [],
+      "excludedCurves": []
+    }
+  },
+  {
+    "name": "node is hardened and no shipped library has an executable stack",
+    "handler": "security.handler",
+    "event": {},
+    "expect": {
+      "node": {
+        "positionIndependent": true,
+        "relro": true,
+        "bindNow": true,
+        "nonExecutableStack": true,
+        "stackProtector": true
+      },
+      "librariesChecked": true,
+      "executableStackLibraries": []
+    }
+  },
+  {
+    "name": "No shipped file is world-writable",
+    "handler": "security.handler",
+    "event": {},
+    "expect": { "worldWritableFiles": [] }
+  },
+  {
+    "name": "The experimental FFI module is disabled by default",
+    "handler": "security.handler",
+    "event": {},
+    "expect": { "ffi": "disabled" }
+  },
+  {
+    "name": "No TLS profile is applied unless one is requested",
+    "handler": "security.handler",
+    "event": {},
+    "expect": { "tlsProfile": null, "opensslConf": null }
+  },
+  {
+    "name": "The cnsa TLS profile restricts the cipher list",
+    "handler": "security.handler",
+    "env": { "AWS_LAMBDA_TLS_PROFILE": "cnsa" },
+    "event": {},
+    "expect": {
+      "tlsProfile": "cnsa-1.0",
+      "opensslConf": "/var/runtime/tls-profiles/cnsa-1.0.conf",
+      "tlsCipherList": "@SECLEVEL=3:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:TLS_AES_256_GCM_SHA384"
+    }
+  },
+  {
+    "name": "A customer OPENSSL_CONF takes precedence over the TLS profile",
+    "handler": "security.handler",
+    "env": { "AWS_LAMBDA_TLS_PROFILE": "cnsa", "OPENSSL_CONF": "/dev/null" },
+    "event": {},
+    "expect": { "tlsProfile": null, "opensslConf": "/dev/null" }
+  },
+  {
+    "name": "An unknown TLS profile fails initialization",
+    "handler": "security.handler",
+    "env": { "AWS_LAMBDA_TLS_PROFILE": "no-such-profile" },
+    "event": {},
+    "expectLogs": "[tls-profile] FATAL: unknown or misconfigured TLS profile 'no-such-profile'"
+  }
+]

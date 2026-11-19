@@ -1,0 +1,8 @@
+{
+  "name": "lambda-runtime-durable",
+  "private": true,
+  "description": "Durable Functions SDK for the nodejs26.x DurableFunction variant",
+  "dependencies": {
+    "@aws/durable-execution-sdk-js": "3.0.0"
+  }
+}

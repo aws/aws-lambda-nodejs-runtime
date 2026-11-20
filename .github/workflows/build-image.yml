@@ -109,7 +109,11 @@ jobs:
       - name: Build the image
         env:
           REGISTRY_MIRROR: ${{ vars.REGISTRY_MIRROR }}
-        run: ./build.sh 26 "linux/$ARCH"
+        run: |
+          if [ -n "${REGISTRY_MIRROR:-}" ]; then
+            export BUILD_CACHE_REF="${REGISTRY_MIRROR%%/*}/aws-lambda-nodejs-runtime-buildcache"
+          fi
+          ./build.sh 26 "linux/$ARCH"
 
       - name: Smoke-test the image
         run: node test/run.mjs "$IMAGE" "linux/$ARCH"

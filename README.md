@@ -109,6 +109,15 @@ are signed with AWS Signer and carry a SLSA provenance attestation.
 
 ## Security
 
-If you discover a potential security issue in this project, we ask that you notify AWS/Amazon
-Security via our [vulnerability reporting page](http://aws.amazon.com/security/vulnerability-reporting/).
-Please do **not** create a public GitHub issue.
+To report a suspected vulnerability privately to AWS Security, follow the
+[security reporting instructions](SECURITY.md).
+
+## Contributing
+
+See the [contributing guide](CONTRIBUTING.md) for bug reports and pull requests, and the
+[code of conduct](CODE_OF_CONDUCT.md) for community expectations.
+
+## License
+
+This project uses the [Apache License 2.0](LICENSE). Third-party components have their own
+license terms. See the [third-party notices bundled with the Node.js 26 image](runtimes/nodejs26.x/THIRD-PARTY-LICENSES.txt).

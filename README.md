@@ -1,5 +1,10 @@
 ## AWS Lambda Node.js Runtime
 
+> [!WARNING]
+> This repository contains the source and build definition of an AWS Lambda Node.js runtime image. Our intent is to provide transparency into how AWS builds its runtimes. Right now, the runtimes we actually ship come from a separate build process, and may differ slightly from the ones produced by this repo. But our direction of travel is to bring them into alignment, and for this repo to become the source of truth for Lambda-managed Node.js runtimes.
+>
+> The output is a container image which holds everything a Node.js function needs to run on Lambda
+
 This repository contains the source and build definition of the AWS Lambda Node.js runtime
 image. The image holds everything a Node.js function needs to run on Lambda: Amazon Linux system
 libraries, Node.js, the AWS SDK for JavaScript v3, root certificates and the Lambda
